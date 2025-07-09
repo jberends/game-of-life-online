@@ -8,10 +8,29 @@ export type DeltaChange = { x: number; y: number; color: Color | null };
 
 const BOARD_WIDTH = 512;
 const BOARD_HEIGHT = 512;
+const NEUTRAL_GREY = '#999999'; // 60% grey
+const INITIAL_DENSITY = 0.1; // 10% of cells initially alive
 
 // --- Core State ---
-let board: Board = Array.from({ length: BOARD_HEIGHT }, () => Array(BOARD_WIDTH).fill(null));
+let board: Board = initializeRandomBoard();
 let generation = 0;
+
+/**
+ * Initializes a random board with neutral grey cells
+ */
+function initializeRandomBoard(): Board {
+  const newBoard: Board = Array.from({ length: BOARD_HEIGHT }, () => Array(BOARD_WIDTH).fill(null));
+  
+  for (let y = 0; y < BOARD_HEIGHT; y++) {
+    for (let x = 0; x < BOARD_WIDTH; x++) {
+      if (Math.random() < INITIAL_DENSITY) {
+        newBoard[y][x] = NEUTRAL_GREY;
+      }
+    }
+  }
+  
+  return newBoard;
+}
 
 /**
  * Applies a set of user-drawn cells to the main board.
