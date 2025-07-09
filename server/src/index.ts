@@ -1,9 +1,14 @@
 import express from 'express';
-import { WebSocketServer } from 'ws';
+import { WebSocketServer, WebSocket } from 'ws';
 import { createServer } from 'http';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { commitCells, calculateNextStep, getFullBoardState, Cell, DeltaChange } from './game-logic.js';
+
+// Extend WebSocket interface to include isAlive property
+interface ExtendedWebSocket extends WebSocket {
+  isAlive?: boolean;
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -14,11 +19,19 @@ const PORT = process.env.PORT || 8080;
 // Create HTTP server
 const server = createServer(app);
 
-// Create WebSocket server
-const wss = new WebSocketServer({ server, path: '/ws' });
+// Create WebSocket server with better configuration
+const wss = new WebSocketServer({ 
+  server, 
+  path: '/ws',
+  perMessageDeflate: false, // Disable compression to reduce overhead
+  maxPayload: 1024 * 1024, // 1MB max payload
+});
 
 // Game simulation variables
 let simulationInterval: NodeJS.Timeout | null = null;
+
+// Track active connections
+const activeConnections = new Set<ExtendedWebSocket>();
 
 // Middleware
 app.use(express.json());
@@ -31,14 +44,26 @@ if (process.env.NODE_ENV === 'production') {
 
 // API endpoint to get current board state
 app.get('/api/board-state', (req, res) => {
-  const gameState = getFullBoardState();
-  res.json(gameState);
+  try {
+    const gameState = getFullBoardState();
+    res.json(gameState);
+  } catch (error) {
+    console.error('Error getting board state:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
-// WebSocket connection handling
-wss.on('connection', (ws) => {
-  console.log('New client connected');
+// WebSocket connection handling with improved error management
+wss.on('connection', (ws: ExtendedWebSocket, req) => {
+  console.log('New client connected from', req.socket.remoteAddress);
+  activeConnections.add(ws);
   
+  // Set up ping/pong for connection health monitoring
+  ws.isAlive = true;
+  ws.on('pong', () => {
+    ws.isAlive = true;
+  });
+
   ws.on('message', (message) => {
     try {
       const data = JSON.parse(message.toString());
@@ -50,38 +75,73 @@ wss.on('connection', (ws) => {
       }
     } catch (error) {
       console.error('Error parsing WebSocket message:', error);
+      // Don't close connection for parsing errors, just log them
     }
   });
 
-  ws.on('close', () => {
-    console.log('Client disconnected');
+  ws.on('close', (code, reason) => {
+    console.log(`Client disconnected: ${code} ${reason}`);
+    activeConnections.delete(ws);
   });
 
   ws.on('error', (error) => {
-    console.error('WebSocket error:', error);
+    console.error('WebSocket error:', error.message);
+    activeConnections.delete(ws);
+    // Don't rethrow the error to prevent unhandled rejection
   });
 });
+
+// Heartbeat to detect broken connections
+const heartbeat = setInterval(() => {
+  wss.clients.forEach((ws: ExtendedWebSocket) => {
+    if (ws.isAlive === false) {
+      console.log('Terminating inactive connection');
+      activeConnections.delete(ws);
+      return ws.terminate();
+    }
+    
+    ws.isAlive = false;
+    ws.ping();
+  });
+}, 30000); // Check every 30 seconds
 
 // Start the game simulation
 function startSimulation() {
   if (simulationInterval) return;
   
   simulationInterval = setInterval(() => {
-    const { changes, nextGeneration } = calculateNextStep();
-    
-    if (changes.length > 0) {
-      const message = JSON.stringify({
-        type: 'delta',
-        changes,
-        generation: nextGeneration
-      });
+    try {
+      const { changes, nextGeneration } = calculateNextStep();
       
-      // Broadcast to all connected clients
-      wss.clients.forEach((client) => {
-        if (client.readyState === client.OPEN) {
-          client.send(message);
-        }
-      });
+      if (changes.length > 0) {
+        const message = JSON.stringify({
+          type: 'delta',
+          changes,
+          generation: nextGeneration
+        });
+        
+        // Broadcast to all connected clients with error handling
+        const clientsToRemove: ExtendedWebSocket[] = [];
+        wss.clients.forEach((client: ExtendedWebSocket) => {
+          if (client.readyState === client.OPEN) {
+            try {
+              client.send(message);
+            } catch (error) {
+              console.error('Error sending message to client:', error instanceof Error ? error.message : 'Unknown error');
+              clientsToRemove.push(client);
+            }
+          } else {
+            clientsToRemove.push(client);
+          }
+        });
+        
+        // Clean up failed connections
+        clientsToRemove.forEach(client => {
+          activeConnections.delete(client);
+        });
+      }
+    } catch (error) {
+      console.error('Error in simulation step:', error);
     }
   }, 100); // Update every 100ms
 }
@@ -91,7 +151,23 @@ function stopSimulation() {
     clearInterval(simulationInterval);
     simulationInterval = null;
   }
+  if (heartbeat) {
+    clearInterval(heartbeat);
+  }
 }
+
+// Add global error handlers to prevent crashes
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  // Don't exit the process, just log the error
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+  // Don't exit the process immediately, try to clean up
+  stopSimulation();
+  setTimeout(() => process.exit(1), 1000);
+});
 
 // Start simulation
 startSimulation();
@@ -104,10 +180,15 @@ if (process.env.NODE_ENV === 'production') {
   });
 }
 
-// Start server
+// Start server with error handling
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Game of Life simulation started`);
+  console.log(`Active connections will be monitored every 30 seconds`);
+});
+
+server.on('error', (error) => {
+  console.error('Server error:', error);
 });
 
 // Graceful shutdown
