@@ -33,21 +33,10 @@ export const useGameSocket = () => {
   
   const connect = () => {
     try {
-      // In development, connect directly to the server port to bypass proxy issues
-      // In production, use the same host as the frontend
-      const isDev = window.location.port === '3000' || window.location.hostname === 'localhost';
-      let wsUrl: string;
-      
-      if (isDev) {
-        // Development: connect directly to the server on port 8080
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const hostname = window.location.hostname;
-        wsUrl = `${protocol}//${hostname}:8080/ws`;
-      } else {
-        // Production: use the same host and let the server handle routing
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        wsUrl = `${protocol}//${window.location.host}/ws`;
-      }
+      // Always connect directly to the server on port 8080
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const hostname = window.location.hostname;
+      const wsUrl = `${protocol}//${hostname}:8080/ws`;
       
       console.log('Attempting to connect to WebSocket:', wsUrl);
       ws.value = new WebSocket(wsUrl);
@@ -57,7 +46,7 @@ export const useGameSocket = () => {
         connected.value = true;
         reconnectAttempts.value = 0;
         
-        // Fetch initial game state via HTTP API (also proxied)
+        // Fetch initial game state via HTTP API
         fetchInitialState();
       };
       
@@ -113,19 +102,10 @@ export const useGameSocket = () => {
   
   const fetchInitialState = async () => {
     try {
-      // In development, connect directly to the server port to bypass proxy issues
-      const isDev = window.location.port === '3000' || window.location.hostname === 'localhost';
-      let apiUrl: string;
-      
-      if (isDev) {
-        // Development: connect directly to the server on port 8080
-        const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
-        const hostname = window.location.hostname;
-        apiUrl = `${protocol}//${hostname}:8080/api/board-state`;
-      } else {
-        // Production: use the proxy
-        apiUrl = '/api/board-state';
-      }
+      // Always connect directly to the server on port 8080
+      const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
+      const hostname = window.location.hostname;
+      const apiUrl = `${protocol}//${hostname}:8080/api/board-state`;
       
       const response = await fetch(apiUrl);
       if (!response.ok) {
@@ -154,19 +134,10 @@ export const useGameSocket = () => {
       try {
         console.log('WebSocket not connected, using HTTP fallback');
         
-        // Use the same logic as other functions for API endpoint
-        const isDev = window.location.port === '3000' || window.location.hostname === 'localhost';
-        let apiUrl: string;
-        
-        if (isDev) {
-          // Development: connect directly to the server on port 8080
-          const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
-          const hostname = window.location.hostname;
-          apiUrl = `${protocol}//${hostname}:8080/api/draw`;
-        } else {
-          // Production: use the proxy
-          apiUrl = '/api/draw';
-        }
+        // Always connect directly to the server on port 8080
+        const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
+        const hostname = window.location.hostname;
+        const apiUrl = `${protocol}//${hostname}:8080/api/draw`;
         
         const response = await fetch(apiUrl, {
           method: 'POST',
