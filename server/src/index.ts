@@ -36,6 +36,34 @@ const activeConnections = new Set<ExtendedWebSocket>();
 // Middleware
 app.use(express.json());
 
+// CORS middleware to allow requests from the client
+app.use((req, res, next) => {
+  // Allow requests from the client development server
+  const allowedOrigins = [
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'http://10.0.145.189:3000',
+    // Add more origins as needed for different network configurations
+  ];
+  
+  const origin = req.headers.origin;
+  if (allowedOrigins.includes(origin as string)) {
+    res.setHeader('Access-Control-Allow-Origin', origin as string);
+  }
+  
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  
+  // Handle preflight requests
+  if (req.method === 'OPTIONS') {
+    res.status(200).end();
+    return;
+  }
+  
+  next();
+});
+
 // In production, serve static files from the Nuxt build output
 if (process.env.NODE_ENV === 'production') {
   const clientBuildPath = path.join(__dirname, '../../client/.output/public');
@@ -49,6 +77,23 @@ app.get('/api/board-state', (req, res) => {
     res.json(gameState);
   } catch (error) {
     console.error('Error getting board state:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// API endpoint to draw cells (HTTP fallback)
+app.post('/api/draw', (req, res) => {
+  try {
+    const { cells } = req.body;
+    if (!Array.isArray(cells)) {
+      return res.status(400).json({ error: 'Invalid cells data' });
+    }
+    
+    commitCells(cells);
+    console.log(`Player drew ${cells.length} cells via HTTP`);
+    res.json({ success: true, cellsDrawn: cells.length });
+  } catch (error) {
+    console.error('Error processing draw request:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });
