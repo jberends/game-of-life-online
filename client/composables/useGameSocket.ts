@@ -21,6 +21,7 @@ interface WebSocketMessage {
   type: string;
   changes?: DeltaChange[];
   generation?: number;
+  cells?: Cell[];
 }
 
 export const useGameSocket = () => {
@@ -64,6 +65,17 @@ export const useGameSocket = () => {
                 }
               }
               generation.value = message.generation;
+            }
+          } else if (message.type === 'immediate_draw' && message.cells) {
+            // Apply drawn cells immediately to the board
+            if (gameState.value) {
+              for (const cell of message.cells) {
+                if (cell.y >= 0 && cell.y < gameState.value.board.length &&
+                    cell.x >= 0 && cell.x < gameState.value.board[cell.y].length) {
+                  gameState.value.board[cell.y][cell.x] = cell.color;
+                }
+              }
+              console.log('Applied immediate draw:', message.cells.length, 'cells');
             }
           }
         } catch (error) {

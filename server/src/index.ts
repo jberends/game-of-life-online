@@ -91,6 +91,23 @@ app.post('/api/draw', (req, res) => {
     
     commitCells(cells);
     console.log(`Player drew ${cells.length} cells via HTTP`);
+    
+    // Immediately broadcast the drawn cells to all clients
+    const drawMessage = JSON.stringify({
+      type: 'immediate_draw',
+      cells: cells
+    });
+    
+    wss.clients.forEach((client: ExtendedWebSocket) => {
+      if (client.readyState === client.OPEN) {
+        try {
+          client.send(drawMessage);
+        } catch (error) {
+          console.error('Error sending immediate draw message:', error instanceof Error ? error.message : 'Unknown error');
+        }
+      }
+    });
+    
     res.json({ success: true, cellsDrawn: cells.length });
   } catch (error) {
     console.error('Error processing draw request:', error);
@@ -117,6 +134,22 @@ wss.on('connection', (ws: ExtendedWebSocket, req) => {
         const cells: Cell[] = data.cells;
         commitCells(cells);
         console.log(`Player drew ${cells.length} cells`);
+        
+        // Immediately broadcast the drawn cells to all clients
+        const drawMessage = JSON.stringify({
+          type: 'immediate_draw',
+          cells: cells
+        });
+        
+        wss.clients.forEach((client: ExtendedWebSocket) => {
+          if (client.readyState === client.OPEN) {
+            try {
+              client.send(drawMessage);
+            } catch (error) {
+              console.error('Error sending immediate draw message:', error instanceof Error ? error.message : 'Unknown error');
+            }
+          }
+        });
       }
     } catch (error) {
       console.error('Error parsing WebSocket message:', error);
