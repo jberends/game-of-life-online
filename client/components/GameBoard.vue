@@ -1,0 +1,191 @@
+<template>
+  <div class="game-board-container">
+    <div class="controls mb-4">
+      <UButton 
+        :disabled="stagingCells.length === 0" 
+        @click="commitCells"
+        color="primary"
+        size="lg"
+      >
+        Commit to Board ({{ stagingCells.length }} cells)
+      </UButton>
+      <UButton 
+        :disabled="stagingCells.length === 0" 
+        @click="clearStaging"
+        color="gray"
+        size="lg"
+        class="ml-2"
+      >
+        Clear Staging
+      </UButton>
+    </div>
+    
+    <div class="board-info mb-2">
+      <p class="text-sm text-gray-600">
+        Generation: {{ generation }} | Your color: 
+        <span class="inline-block w-4 h-4 ml-1 border border-gray-300" :style="{ backgroundColor: playerColor }"></span>
+      </p>
+    </div>
+    
+    <div class="canvas-container">
+      <canvas
+        ref="canvasRef"
+        :width="CANVAS_SIZE"
+        :height="CANVAS_SIZE"
+        class="border border-gray-300 cursor-crosshair"
+        @click="handleCanvasClick"
+      />
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+interface Cell {
+  x: number;
+  y: number;
+  color: string;
+}
+
+interface DeltaChange {
+  x: number;
+  y: number;
+  color: string | null;
+}
+
+const { gameState, sendDraw, generation } = useGameSocket();
+
+const canvasRef = ref<HTMLCanvasElement | null>(null);
+const stagingCells = ref<Cell[]>([]);
+const playerColor = ref('');
+
+const BOARD_SIZE = 512;
+const CANVAS_SIZE = 512;
+const CELL_SIZE = CANVAS_SIZE / BOARD_SIZE;
+
+// Generate a random, visually pleasing color for the player
+const generatePlayerColor = (): string => {
+  const colors = [
+    '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7',
+    '#DDA0DD', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E9'
+  ];
+  return colors[Math.floor(Math.random() * colors.length)];
+};
+
+onMounted(() => {
+  playerColor.value = generatePlayerColor();
+  drawBoard();
+});
+
+const drawBoard = () => {
+  const canvas = canvasRef.value;
+  if (!canvas) return;
+  
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  
+  // Clear canvas
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+  
+  // Draw committed cells from server
+  if (gameState.value?.board) {
+    for (let y = 0; y < BOARD_SIZE; y++) {
+      for (let x = 0; x < BOARD_SIZE; x++) {
+        const cell = gameState.value.board[y][x];
+        if (cell) {
+          ctx.fillStyle = cell;
+          ctx.fillRect(
+            x * CELL_SIZE,
+            y * CELL_SIZE,
+            CELL_SIZE,
+            CELL_SIZE
+          );
+        }
+      }
+    }
+  }
+  
+  // Draw staging cells with transparency
+  ctx.globalAlpha = 0.5;
+  for (const cell of stagingCells.value) {
+    ctx.fillStyle = cell.color;
+    ctx.fillRect(
+      cell.x * CELL_SIZE,
+      cell.y * CELL_SIZE,
+      CELL_SIZE,
+      CELL_SIZE
+    );
+  }
+  ctx.globalAlpha = 1.0;
+};
+
+const handleCanvasClick = (event: MouseEvent) => {
+  const canvas = canvasRef.value;
+  if (!canvas) return;
+  
+  const rect = canvas.getBoundingClientRect();
+  const x = Math.floor((event.clientX - rect.left) / CELL_SIZE);
+  const y = Math.floor((event.clientY - rect.top) / CELL_SIZE);
+  
+  if (x >= 0 && x < BOARD_SIZE && y >= 0 && y < BOARD_SIZE) {
+    // Check if cell is already in staging
+    const existingIndex = stagingCells.value.findIndex(cell => cell.x === x && cell.y === y);
+    
+    if (existingIndex >= 0) {
+      // Remove from staging if already there
+      stagingCells.value.splice(existingIndex, 1);
+    } else {
+      // Add to staging
+      stagingCells.value.push({ x, y, color: playerColor.value });
+    }
+    
+    drawBoard();
+  }
+};
+
+const commitCells = () => {
+  if (stagingCells.value.length > 0) {
+    sendDraw(stagingCells.value);
+    stagingCells.value = [];
+    drawBoard();
+  }
+};
+
+const clearStaging = () => {
+  stagingCells.value = [];
+  drawBoard();
+};
+
+// Watch for board updates from server
+watch(gameState, () => {
+  drawBoard();
+}, { deep: true });
+
+// Watch for generation updates
+watch(generation, () => {
+  drawBoard();
+});
+</script>
+
+<style scoped>
+.game-board-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px;
+}
+
+.controls {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.canvas-container {
+  position: relative;
+}
+
+canvas {
+  display: block;
+}
+</style>
