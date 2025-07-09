@@ -67,7 +67,7 @@ The game will then be accessible at `http://localhost:3000`.
 ## Technical Details
 
 - **Board Size**: 25x25 cells
-- **Tick Rate**: 5 ticks per second (200ms intervals)
+- **Tick Rate**: 4 generations per second (250ms intervals)
 - **Max Players**: Up to 10 players can connect simultaneously
 - **Color Logic**: New cells inherit colors from their neighbors using a dominant color rule with RGB averaging for ties
 - **Real-time Updates**: Uses WebSockets for low-latency communication

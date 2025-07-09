@@ -225,7 +225,7 @@ function startSimulation() {
     } catch (error) {
       console.error('Error in simulation step:', error);
     }
-  }, 100); // Update every 100ms
+  }, 250); // Update every 250ms (4 generations per second)
 }
 
 function stopSimulation() {

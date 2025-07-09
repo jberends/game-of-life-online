@@ -46,6 +46,13 @@
         :height="CANVAS_SIZE"
         class="border border-gray-300 cursor-crosshair"
         @click="handleCanvasClick"
+        @mousedown="handleMouseDown"
+        @mousemove="handleMouseMove"
+        @mouseup="handleMouseUp"
+        @mouseleave="handleMouseLeave"
+        @touchstart="handleTouchStart"
+        @touchmove="handleTouchMove"
+        @touchend="handleTouchEnd"
       />
     </div>
   </div>
@@ -70,6 +77,10 @@ const canvasRef = ref<HTMLCanvasElement | null>(null);
 const stagingCells = ref<Cell[]>([]);
 const playerColor = ref('');
 const clientId = ref('');
+const isDrawing = ref(false);
+const lastDrawnCell = ref<{x: number, y: number} | null>(null);
+const needsRedraw = ref(true);
+const animationFrameId = ref<number | null>(null);
 
 const BOARD_SIZE = 25;
 const CANVAS_SIZE = 500; // Keep canvas visually large but with 25x25 cells
@@ -112,54 +123,86 @@ const getPlayerColor = (): string => {
   return newColor;
 };
 
-onMounted(() => {
-  clientId.value = generateClientId();
-  playerColor.value = getPlayerColor();
-  console.log('Client initialized:', { clientId: clientId.value, playerColor: playerColor.value });
-  drawBoard();
-});
+  // Watch for game state changes and redraw
+  watch(gameState, () => {
+    if (gameState.value) {
+      needsRedraw.value = true;
+      drawBoard();
+    }
+  }, { deep: true });
+
+  // Initial draw when component mounts
+  onMounted(() => {
+    clientId.value = generateClientId();
+    playerColor.value = getPlayerColor();
+    console.log('Client initialized:', { clientId: clientId.value, playerColor: playerColor.value });
+    needsRedraw.value = true;
+    drawBoard();
+  });
+
+  // Cleanup on unmount
+  onUnmounted(() => {
+    if (animationFrameId.value) {
+      cancelAnimationFrame(animationFrameId.value);
+    }
+  });
 
 const drawBoard = () => {
-  const canvas = canvasRef.value;
-  if (!canvas) return;
+  if (!needsRedraw.value) return;
   
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return;
+  if (animationFrameId.value) {
+    cancelAnimationFrame(animationFrameId.value);
+  }
   
-  // Clear canvas
-  ctx.fillStyle = '#FFFFFF';
-  ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
-  
-  // Draw committed cells from server
-  if (gameState.value?.board) {
-    for (let y = 0; y < BOARD_SIZE; y++) {
-      for (let x = 0; x < BOARD_SIZE; x++) {
-        const cell = gameState.value.board[y][x];
-        if (cell) {
-          ctx.fillStyle = cell;
-          ctx.fillRect(
-            x * CELL_SIZE,
-            y * CELL_SIZE,
-            CELL_SIZE,
-            CELL_SIZE
-          );
+  animationFrameId.value = requestAnimationFrame(() => {
+    const canvas = canvasRef.value;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    // Clear canvas
+    ctx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+
+    // Draw the game board
+    if (gameState.value?.board) {
+      for (let y = 0; y < BOARD_SIZE; y++) {
+        for (let x = 0; x < BOARD_SIZE; x++) {
+          const color = gameState.value.board[y][x];
+          if (color && color !== '#999999') { // Don't draw neutral grey cells
+            ctx.fillStyle = color;
+            ctx.fillRect(x * CELL_SIZE, y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+          }
         }
       }
     }
-  }
-  
-  // Draw staging cells with transparency
-  ctx.globalAlpha = 0.5;
-  for (const cell of stagingCells.value) {
-    ctx.fillStyle = cell.color;
-    ctx.fillRect(
-      cell.x * CELL_SIZE,
-      cell.y * CELL_SIZE,
-      CELL_SIZE,
-      CELL_SIZE
-    );
-  }
-  ctx.globalAlpha = 1.0;
+
+    // Draw staging cells with transparency
+    ctx.globalAlpha = 0.7;
+    for (const cell of stagingCells.value) {
+      ctx.fillStyle = cell.color;
+      ctx.fillRect(cell.x * CELL_SIZE, cell.y * CELL_SIZE, CELL_SIZE, CELL_SIZE);
+    }
+    ctx.globalAlpha = 1.0;
+
+    // Draw grid lines
+    ctx.strokeStyle = '#e0e0e0';
+    ctx.lineWidth = 1;
+    for (let i = 0; i <= BOARD_SIZE; i++) {
+      ctx.beginPath();
+      ctx.moveTo(i * CELL_SIZE, 0);
+      ctx.lineTo(i * CELL_SIZE, CANVAS_SIZE);
+      ctx.stroke();
+      
+      ctx.beginPath();
+      ctx.moveTo(0, i * CELL_SIZE);
+      ctx.lineTo(CANVAS_SIZE, i * CELL_SIZE);
+      ctx.stroke();
+    }
+    
+    needsRedraw.value = false;
+    animationFrameId.value = null;
+  });
 };
 
 const handleCanvasClick = (event: MouseEvent) => {
@@ -186,16 +229,91 @@ const handleCanvasClick = (event: MouseEvent) => {
   }
 };
 
+const handleMouseDown = (event: MouseEvent) => {
+  isDrawing.value = true;
+  handleMouseMove(event); // Draw the initial cell
+};
+
+const handleMouseMove = (event: MouseEvent) => {
+  if (!isDrawing.value) return;
+  
+  const canvas = canvasRef.value;
+  if (!canvas) return;
+
+  const rect = canvas.getBoundingClientRect();
+  const x = Math.floor((event.clientX - rect.left) / CELL_SIZE);
+  const y = Math.floor((event.clientY - rect.top) / CELL_SIZE);
+
+  // Check if we're within bounds and haven't already drawn this cell
+  if (x >= 0 && x < BOARD_SIZE && y >= 0 && y < BOARD_SIZE) {
+    // Avoid drawing the same cell multiple times during drag
+    if (lastDrawnCell.value && lastDrawnCell.value.x === x && lastDrawnCell.value.y === y) {
+      return;
+    }
+    
+    lastDrawnCell.value = { x, y };
+    
+    // Check if this cell is already in staging
+    const existingIndex = stagingCells.value.findIndex(cell => cell.x === x && cell.y === y);
+    if (existingIndex === -1) {
+      stagingCells.value.push({ x, y, color: playerColor.value });
+      needsRedraw.value = true;
+      drawBoard();
+    }
+  }
+};
+
+const handleMouseUp = () => {
+  isDrawing.value = false;
+  lastDrawnCell.value = null;
+};
+
+const handleMouseLeave = () => {
+  isDrawing.value = false;
+  lastDrawnCell.value = null;
+};
+
+const handleTouchStart = (event: TouchEvent) => {
+  event.preventDefault();
+  isDrawing.value = true;
+  const touch = event.touches[0];
+  const mouseEvent = new MouseEvent('mousedown', {
+    clientX: touch.clientX,
+    clientY: touch.clientY
+  });
+  handleMouseMove(mouseEvent);
+};
+
+const handleTouchMove = (event: TouchEvent) => {
+  event.preventDefault();
+  if (!isDrawing.value) return;
+  
+  const touch = event.touches[0];
+  const mouseEvent = new MouseEvent('mousemove', {
+    clientX: touch.clientX,
+    clientY: touch.clientY
+  });
+  handleMouseMove(mouseEvent);
+};
+
+const handleTouchEnd = (event: TouchEvent) => {
+  event.preventDefault();
+  isDrawing.value = false;
+  lastDrawnCell.value = null;
+};
+
 const commitCells = () => {
   if (stagingCells.value.length > 0) {
     sendDraw(stagingCells.value, clientId.value);
     stagingCells.value = [];
+    needsRedraw.value = true;
     drawBoard();
   }
 };
 
 const clearStaging = () => {
   stagingCells.value = [];
+  needsRedraw.value = true;
   drawBoard();
 };
 
@@ -205,11 +323,6 @@ const regenerateColor = () => {
   console.log('Player color regenerated:', playerColor.value);
   drawBoard();
 };
-
-// Watch for board updates from server
-watch(gameState, () => {
-  drawBoard();
-}, { deep: true });
 
 // Watch for generation updates
 watch(generation, () => {
