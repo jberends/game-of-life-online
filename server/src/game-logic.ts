@@ -6,8 +6,8 @@ export type Board = (Color | null)[][];
 export type Cell = { x: number; y: number; color: Color };
 export type DeltaChange = { x: number; y: number; color: Color | null };
 
-const BOARD_WIDTH = 512;
-const BOARD_HEIGHT = 512;
+const BOARD_WIDTH = 25;
+const BOARD_HEIGHT = 25;
 const NEUTRAL_GREY = '#999999'; // 60% grey
 const INITIAL_DENSITY = 0.1; // 10% of cells initially alive
 

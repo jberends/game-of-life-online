@@ -58,8 +58,8 @@ const canvasRef = ref<HTMLCanvasElement | null>(null);
 const stagingCells = ref<Cell[]>([]);
 const playerColor = ref('');
 
-const BOARD_SIZE = 512;
-const CANVAS_SIZE = 512;
+const BOARD_SIZE = 25;
+const CANVAS_SIZE = 500; // Keep canvas visually large but with 25x25 cells
 const CELL_SIZE = CANVAS_SIZE / BOARD_SIZE;
 
 // Generate a random, visually pleasing color for the player

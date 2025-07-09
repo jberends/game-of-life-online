@@ -6,7 +6,7 @@ A multiplayer Conway's Game of Life implementation with colored cells and real-t
 ## Core Specifications
 
 ### Board Configuration
-- **Board Size**: 512x512 cells
+- **Board Size**: 25x25 cells
 - **Tick Rate**: 5 ticks per second (200ms intervals)
 - **Max Players**: Up to 10 players can connect simultaneously
 
