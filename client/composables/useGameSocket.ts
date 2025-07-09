@@ -22,6 +22,7 @@ interface WebSocketMessage {
   changes?: DeltaChange[];
   generation?: number;
   cells?: Cell[];
+  clientId?: string;
 }
 
 export const useGameSocket = () => {
@@ -75,7 +76,7 @@ export const useGameSocket = () => {
                   gameState.value.board[cell.y][cell.x] = cell.color;
                 }
               }
-              console.log('Applied immediate draw:', message.cells.length, 'cells');
+              console.log('Applied immediate draw:', message.cells.length, 'cells from client:', message.clientId || 'unknown');
             }
           }
         } catch (error) {
@@ -132,15 +133,16 @@ export const useGameSocket = () => {
     }
   };
   
-  const sendDraw = async (cells: Cell[]) => {
+  const sendDraw = async (cells: Cell[], clientId?: string) => {
     if (ws.value && connected.value) {
       // Send via WebSocket if connected
       const message = {
         type: 'draw',
-        cells
+        cells,
+        clientId: clientId || 'unknown'
       };
       ws.value.send(JSON.stringify(message));
-      console.log('Draw message sent via WebSocket:', cells.length, 'cells');
+      console.log('Draw message sent via WebSocket:', cells.length, 'cells', 'from client:', clientId);
     } else {
       // Fallback to HTTP if WebSocket not connected
       try {
@@ -156,14 +158,14 @@ export const useGameSocket = () => {
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ cells }),
+          body: JSON.stringify({ cells, clientId: clientId || 'unknown' }),
         });
         
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
         
-        console.log('Draw sent via HTTP successfully');
+        console.log('Draw sent via HTTP successfully from client:', clientId);
       } catch (error) {
         console.error('Failed to send draw via HTTP:', error);
       }

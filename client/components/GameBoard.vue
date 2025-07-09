@@ -24,6 +24,18 @@
       <p class="text-sm text-gray-600">
         Generation: {{ generation }} | Your color: 
         <span class="inline-block w-4 h-4 ml-1 border border-gray-300" :style="{ backgroundColor: playerColor }"></span>
+        <UButton 
+          @click="regenerateColor" 
+          size="xs" 
+          color="gray" 
+          variant="ghost"
+          class="ml-2"
+        >
+          Change Color
+        </UButton>
+      </p>
+      <p class="text-xs text-gray-500">
+        Client ID: {{ clientId }}
       </p>
     </div>
     
@@ -57,10 +69,23 @@ const { gameState, sendDraw, generation } = useGameSocket();
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 const stagingCells = ref<Cell[]>([]);
 const playerColor = ref('');
+const clientId = ref('');
 
 const BOARD_SIZE = 25;
 const CANVAS_SIZE = 500; // Keep canvas visually large but with 25x25 cells
 const CELL_SIZE = CANVAS_SIZE / BOARD_SIZE;
+
+// Generate a unique client ID that persists for this browser tab
+const generateClientId = (): string => {
+  // Check if we already have a client ID in sessionStorage (unique per tab)
+  let id = sessionStorage.getItem('gameOfLife_clientId');
+  if (!id) {
+    // Generate a new unique ID using timestamp and random number
+    id = `client_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    sessionStorage.setItem('gameOfLife_clientId', id);
+  }
+  return id;
+};
 
 // Generate a random, visually pleasing color for the player
 const generatePlayerColor = (): string => {
@@ -71,8 +96,26 @@ const generatePlayerColor = (): string => {
   return colors[Math.floor(Math.random() * colors.length)];
 };
 
+// Get or generate player color with localStorage persistence
+const getPlayerColor = (): string => {
+  // Try to get color from localStorage (persists across all tabs and sessions)
+  const savedColor = localStorage.getItem('gameOfLife_playerColor');
+  if (savedColor) {
+    console.log('Loaded saved player color:', savedColor);
+    return savedColor;
+  }
+  
+  // Generate new color and save it
+  const newColor = generatePlayerColor();
+  localStorage.setItem('gameOfLife_playerColor', newColor);
+  console.log('Generated new player color:', newColor);
+  return newColor;
+};
+
 onMounted(() => {
-  playerColor.value = generatePlayerColor();
+  clientId.value = generateClientId();
+  playerColor.value = getPlayerColor();
+  console.log('Client initialized:', { clientId: clientId.value, playerColor: playerColor.value });
   drawBoard();
 });
 
@@ -145,7 +188,7 @@ const handleCanvasClick = (event: MouseEvent) => {
 
 const commitCells = () => {
   if (stagingCells.value.length > 0) {
-    sendDraw(stagingCells.value);
+    sendDraw(stagingCells.value, clientId.value);
     stagingCells.value = [];
     drawBoard();
   }
@@ -153,6 +196,13 @@ const commitCells = () => {
 
 const clearStaging = () => {
   stagingCells.value = [];
+  drawBoard();
+};
+
+const regenerateColor = () => {
+  playerColor.value = generatePlayerColor();
+  localStorage.setItem('gameOfLife_playerColor', playerColor.value);
+  console.log('Player color regenerated:', playerColor.value);
   drawBoard();
 };
 

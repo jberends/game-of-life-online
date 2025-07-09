@@ -84,18 +84,20 @@ app.get('/api/board-state', (req, res) => {
 // API endpoint to draw cells (HTTP fallback)
 app.post('/api/draw', (req, res) => {
   try {
-    const { cells } = req.body;
+    const { cells, clientId } = req.body;
     if (!Array.isArray(cells)) {
       return res.status(400).json({ error: 'Invalid cells data' });
     }
     
+    const client = clientId || 'unknown';
     commitCells(cells);
-    console.log(`Player drew ${cells.length} cells via HTTP`);
+    console.log(`Client ${client} drew ${cells.length} cells via HTTP`);
     
     // Immediately broadcast the drawn cells to all clients
     const drawMessage = JSON.stringify({
       type: 'immediate_draw',
-      cells: cells
+      cells: cells,
+      clientId: client
     });
     
     wss.clients.forEach((client: ExtendedWebSocket) => {
@@ -132,13 +134,15 @@ wss.on('connection', (ws: ExtendedWebSocket, req) => {
       
       if (data.type === 'draw') {
         const cells: Cell[] = data.cells;
+        const clientId = data.clientId || 'unknown';
         commitCells(cells);
-        console.log(`Player drew ${cells.length} cells`);
+        console.log(`Client ${clientId} drew ${cells.length} cells`);
         
         // Immediately broadcast the drawn cells to all clients
         const drawMessage = JSON.stringify({
           type: 'immediate_draw',
-          cells: cells
+          cells: cells,
+          clientId: clientId
         });
         
         wss.clients.forEach((client: ExtendedWebSocket) => {
