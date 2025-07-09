@@ -33,10 +33,21 @@ export const useGameSocket = () => {
   
   const connect = () => {
     try {
-      // Use the proxy endpoint instead of trying to connect directly to the server
-      // The Nuxt dev server will proxy /ws to the actual WebSocket server on port 8080
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${window.location.host}/ws`;
+      // In development, connect directly to the server port to bypass proxy issues
+      // In production, use the same host as the frontend
+      const isDev = window.location.port === '3000' || window.location.hostname === 'localhost';
+      let wsUrl: string;
+      
+      if (isDev) {
+        // Development: connect directly to the server on port 8080
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const hostname = window.location.hostname;
+        wsUrl = `${protocol}//${hostname}:8080/ws`;
+      } else {
+        // Production: use the same host and let the server handle routing
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        wsUrl = `${protocol}//${window.location.host}/ws`;
+      }
       
       console.log('Attempting to connect to WebSocket:', wsUrl);
       ws.value = new WebSocket(wsUrl);
@@ -102,38 +113,77 @@ export const useGameSocket = () => {
   
   const fetchInitialState = async () => {
     try {
-      console.log('Fetching initial board state...');
-      const response = await fetch('/api/board-state');
+      // In development, connect directly to the server port to bypass proxy issues
+      const isDev = window.location.port === '3000' || window.location.hostname === 'localhost';
+      let apiUrl: string;
       
+      if (isDev) {
+        // Development: connect directly to the server on port 8080
+        const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
+        const hostname = window.location.hostname;
+        apiUrl = `${protocol}//${hostname}:8080/api/board-state`;
+      } else {
+        // Production: use the proxy
+        apiUrl = '/api/board-state';
+      }
+      
+      const response = await fetch(apiUrl);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
-      
-      const data = await response.json();
+      const data: GameState = await response.json();
       gameState.value = data;
       generation.value = data.generation;
-      console.log('Initial board state loaded successfully');
+      console.log('Initial game state loaded:', { generation: data.generation });
     } catch (error) {
-      console.error('Error fetching initial state:', error);
-      // Retry after a delay
-      setTimeout(fetchInitialState, 2000);
+      console.error('Failed to fetch initial game state:', error);
     }
   };
   
-  const sendDraw = (cells: Cell[]) => {
-    if (ws.value && connected.value && ws.value.readyState === WebSocket.OPEN) {
-      try {
-        const message = {
-          type: 'draw',
-          cells
-        };
-        ws.value.send(JSON.stringify(message));
-        console.log(`Sent draw message with ${cells.length} cells`);
-      } catch (error) {
-        console.error('Error sending draw message:', error);
-      }
+  const sendDraw = async (cells: Cell[]) => {
+    if (ws.value && connected.value) {
+      // Send via WebSocket if connected
+      const message = {
+        type: 'draw',
+        cells
+      };
+      ws.value.send(JSON.stringify(message));
+      console.log('Draw message sent via WebSocket:', cells.length, 'cells');
     } else {
-      console.warn('Cannot send draw message: WebSocket not connected');
+      // Fallback to HTTP if WebSocket not connected
+      try {
+        console.log('WebSocket not connected, using HTTP fallback');
+        
+        // Use the same logic as other functions for API endpoint
+        const isDev = window.location.port === '3000' || window.location.hostname === 'localhost';
+        let apiUrl: string;
+        
+        if (isDev) {
+          // Development: connect directly to the server on port 8080
+          const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
+          const hostname = window.location.hostname;
+          apiUrl = `${protocol}//${hostname}:8080/api/draw`;
+        } else {
+          // Production: use the proxy
+          apiUrl = '/api/draw';
+        }
+        
+        const response = await fetch(apiUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ cells }),
+        });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        console.log('Draw sent via HTTP successfully');
+      } catch (error) {
+        console.error('Failed to send draw via HTTP:', error);
+      }
     }
   };
   
